@@ -16,6 +16,7 @@ async fn main() {
     }
     info!("Working on: '{}', to target: '{}'", args[1], args[2]);
 
+    let start_time = std::time::Instant::now();
     let pow_target = args[2].parse::<u8>().unwrap();
     let my_keys = Keys::generate();
     let unsigned_event = UnsignedEvent::new(
@@ -47,6 +48,11 @@ async fn main() {
 
     let signed_event = pow_event.sign(&my_keys).unwrap();
     client.send_event(signed_event).await.unwrap();
+    info!(
+        "Published event with pow {} in {:?}",
+        pow_target,
+        start_time.elapsed()
+    );
 }
 
 fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result<UnsignedEvent> {
