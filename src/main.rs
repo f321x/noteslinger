@@ -33,7 +33,7 @@ fn main() {
     // Hash event
     info!("Hashing: '{}' to target: {}", args[1], args[2]);
     let start_time = std::time::Instant::now();
-    let pow_event = hash_event(unsigned_event, pow_target).unwrap();
+    let (pow_event, kilononces_per_second) = hash_event(unsigned_event, pow_target).unwrap();
 
     // Create and run the Tokio runtime and publish the event
     let rt = Runtime::new().unwrap();
@@ -41,13 +41,14 @@ fn main() {
         publish_event(pow_event, my_keys).await;
     });
     info!(
-        "Published event with pow {} in {:?}",
+        "Published event with pow {} in {:?} generating {} kilononces per second",
         pow_target,
-        start_time.elapsed()
+        start_time.elapsed(),
+        kilononces_per_second
     );
 }
 
-fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result<UnsignedEvent> {
+fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result<(UnsignedEvent, u128)> {
     let nostr_sdk::UnsignedEvent {
         kind,
         content,
@@ -69,15 +70,15 @@ fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result
     
     if let Some(nonce) = result {
         let tags = vec![Tag::pow(nonce, difficulty)];
-        info!("KiloNonces per second: {}", (nonce/1000) as f64 / duration.as_secs_f64());
-        Ok(UnsignedEvent {
+        let kilononces_per_second = ((nonce/1000) as f64 / duration.as_secs_f64()) as u128 ;
+        Ok((UnsignedEvent {
             id: Some(EventId::new(&pubkey, &created_at, &kind, &tags, &content)),
             pubkey,
             created_at,
             kind,
             tags,
             content,
-        })
+        }, kilononces_per_second))
     } else {
         Err(anyhow!("Failed to find valid PoW"))
     }
