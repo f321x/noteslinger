@@ -122,7 +122,8 @@ fn test_performance_comparison() {
         "Average duration rayon iter pow {} (multi threaded): {:?}",
         difficulty, duration_rayon_avg
     );
-
+    println!("Cooling down for 10 seconds");
+    std::thread::sleep(std::time::Duration::from_secs(10));
     // // boilerplate to test new pow implementations // //
     // let start = std::time::Instant::now();
     // for _ in 0..6 {
@@ -133,6 +134,8 @@ fn test_performance_comparison() {
     //     "Average duration rayon iter pow {} (multi threaded): {:?}",
     //     difficulty, duration_rayon_avg
     // );
+    // println!("Cooling down for 10 seconds");
+    // std::thread::sleep(std::time::Duration::from_secs(10));
 
     // get average duration for sdk pow
     let start = std::time::Instant::now();
