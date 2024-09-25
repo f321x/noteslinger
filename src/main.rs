@@ -41,7 +41,7 @@ fn main() {
         publish_event(pow_event, my_keys).await;
     });
     info!(
-        "Published event with pow {} in {:?} generating {} kilohashes per second",
+        "Published event with pow {} in {:?} generating {} at kH/s",
         pow_target,
         start_time.elapsed(),
         kilohashes_per_second 
