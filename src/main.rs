@@ -122,7 +122,7 @@ fn test_performance_comparison() {
         difficulty, duration_rayon_avg
     );
 
-    // boilerplate to test new pow implementations
+    // // boilerplate to test new pow implementations // //
     // let start = std::time::Instant::now();
     // for _ in 0..6 {
     //     let _ = hash_event_new(unsigned_event.clone(), difficulty).unwrap();
