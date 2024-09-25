@@ -1,7 +1,8 @@
 use anyhow::*;
 use log::info;
-use nostr_sdk::prelude::*;
+use nostr_sdk::{bitcoin::hashes::{Hash, sha256::Hash as Sha256Hash}, prelude::*};
 use rayon::iter::{ParallelBridge, ParallelIterator};
+use serde_json::json;
 use std::env;
 use tokio::runtime::Runtime;
 
@@ -55,16 +56,20 @@ fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result
         ..
     } = event;
 
+    let start = std::time::Instant::now();
     let result = (1u128..u128::MAX).par_bridge().find_map_any(|nonce| {
-        let tags = vec![Tag::pow(nonce, difficulty)];
-        if EventId::new(&pubkey, &created_at, &kind, &tags, &content).check_pow(difficulty) {
-            Some(tags)
+        let hash: Sha256Hash = Sha256Hash::hash(json!([0, pubkey, created_at, kind, [["nonce", nonce, difficulty]], content]).to_string().as_bytes());
+        if nip13::get_leading_zero_bits(hash) >= difficulty {
+            Some(nonce)
         } else {
             None
         }
     });
-
-    if let Some(tags) = result {
+    let duration = start.elapsed();
+    
+    if let Some(nonce) = result {
+        let tags = vec![Tag::pow(nonce, difficulty)];
+        info!("KiloNonces per second: {}", (nonce/1000) as f64 / duration.as_secs_f64());
         Ok(UnsignedEvent {
             id: Some(EventId::new(&pubkey, &created_at, &kind, &tags, &content)),
             pubkey,
@@ -102,6 +107,9 @@ async fn publish_event(pow_event: UnsignedEvent, keys: Keys) {
 // run with RUSTFLAGS="-C target-cpu=native" cargo test --release -- --nocapture
 #[test]
 fn test_performance_comparison() {
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Debug)
+        .init();
     let my_keys = Keys::generate();
     let difficulty = 22;
     let iterations = 6;
