@@ -3,9 +3,9 @@ use log::info;
 use nostr_sdk::prelude::*;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::env;
+use tokio::runtime::Runtime;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     // enable logging to stdout
     env_logger::builder()
         .filter_level(log::LevelFilter::Debug)
@@ -29,15 +29,16 @@ async fn main() {
         args[1].clone(),
     );
 
-    // hash event
+    // Hash event
     info!("Hashing: '{}' to target: {}", args[1], args[2]);
     let start_time = std::time::Instant::now();
-    let pow_event =
-        tokio::task::spawn_blocking(move || hash_event(unsigned_event, pow_target).unwrap())
-            .await
-            .unwrap();
-    publish_event(pow_event, my_keys).await;
+    let pow_event = hash_event(unsigned_event, pow_target).unwrap();
 
+    // Create and run the Tokio runtime and publish the event
+    let rt = Runtime::new().unwrap();
+    rt.block_on(async {
+        publish_event(pow_event, my_keys).await;
+    });
     info!(
         "Published event with pow {} in {:?}",
         pow_target,
