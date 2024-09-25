@@ -15,8 +15,21 @@ async fn main() {
         return;
     }
     info!("Working on: '{}', to target: '{}'", args[1], args[2]);
+
     let pow_target = args[2].parse::<u8>().unwrap();
     let my_keys = Keys::generate();
+    let unsigned_event = UnsignedEvent::new(
+        my_keys.public_key(),
+        Timestamp::now(),
+        Kind::TextNote,
+        None,
+        args[1].clone(),
+    );
+    let pow_event =
+        tokio::task::spawn_blocking(move || hash_event(unsigned_event, pow_target).unwrap())
+            .await
+            .unwrap();
+
     let client = Client::new(my_keys.clone());
     client
         .add_relay("wss://nostr.bitcoiner.social")
@@ -32,17 +45,6 @@ async fn main() {
     client.add_relay("wss://relay.nostr.band/").await.unwrap();
     client.connect().await;
 
-    let unsigned_event = UnsignedEvent::new(
-        my_keys.public_key(),
-        Timestamp::now(),
-        Kind::TextNote,
-        None,
-        args[1].clone(),
-    );
-    let pow_event =
-        tokio::task::spawn_blocking(move || hash_event(unsigned_event, pow_target).unwrap())
-            .await
-            .unwrap();
     let signed_event = pow_event.sign(&my_keys).unwrap();
     client.send_event(signed_event).await.unwrap();
 }
