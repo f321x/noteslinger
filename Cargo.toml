@@ -17,3 +17,5 @@ opt-level = 3
 strip = true
 codegen-units = 1
 debug = false
+
+# RUSTFLAGS="-C target-cpu=native"

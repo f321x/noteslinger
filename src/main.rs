@@ -7,7 +7,7 @@ use std::env;
 #[tokio::main]
 async fn main() {
     env_logger::builder()
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Debug)
         .init();
     let args = env::args().collect::<Vec<String>>();
     if args.len() != 3 || args[1].is_empty() {
@@ -79,4 +79,43 @@ fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result
     } else {
         Err(anyhow!("Failed to find valid PoW"))
     }
+}
+
+#[test]
+fn test_performance_comparison() {
+    // run with RUSTFLAGS="-C target-cpu=native" cargo test --release -- --nocapture
+    let my_keys = Keys::generate();
+    let difficulty = 22;
+    let iterations = 6;
+
+    let unsigned_event = UnsignedEvent::new(
+        my_keys.public_key(),
+        Timestamp::now(),
+        Kind::TextNote,
+        None,
+        "Hello, World!".to_string(),
+    );
+    let start = std::time::Instant::now();
+    for _ in 0..6 {
+        let _ = hash_event(unsigned_event.clone(), difficulty).unwrap();
+    }
+    let duration_rayon_avg = start.elapsed() / iterations;
+    println!(
+        "Average duration rayon iter pow {} (multi threaded): {:?}",
+        difficulty, duration_rayon_avg
+    );
+
+    // get average duration for sdk pow
+    let start = std::time::Instant::now();
+    for _ in 0..6 {
+        let _ = EventBuilder::new(Kind::TextNote, "Hello, World!", None)
+            .pow(22)
+            .to_unsigned_event(my_keys.public_key());
+    }
+    let duration_sdk_avg = start.elapsed() / iterations;
+    println!(
+        "Average duration nostr-sdk pow {} (single threaded): {:?}",
+        difficulty, duration_sdk_avg
+    );
+    assert!(duration_rayon_avg < duration_sdk_avg);
 }
