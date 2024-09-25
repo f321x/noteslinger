@@ -6,18 +6,20 @@ use std::env;
 
 #[tokio::main]
 async fn main() {
+    // enable logging to stdout
     env_logger::builder()
         .filter_level(log::LevelFilter::Debug)
         .init();
+
+    // validate cli arguments and parse pow target
     let args = env::args().collect::<Vec<String>>();
     if args.len() != 3 || args[1].is_empty() {
         println!("Give the message you want to publish as argument and pow target as second");
         return;
     }
-    info!("Working on: '{}', to target: '{}'", args[1], args[2]);
-
-    let start_time = std::time::Instant::now();
     let pow_target = args[2].parse::<u8>().unwrap();
+
+    // generate random keys and assemble unsigned nostr event to hash
     let my_keys = Keys::generate();
     let unsigned_event = UnsignedEvent::new(
         my_keys.public_key(),
@@ -26,12 +28,57 @@ async fn main() {
         None,
         args[1].clone(),
     );
+
+    // hash event
+    info!("Hashing: '{}' to target: {}", args[1], args[2]);
+    let start_time = std::time::Instant::now();
     let pow_event =
         tokio::task::spawn_blocking(move || hash_event(unsigned_event, pow_target).unwrap())
             .await
             .unwrap();
+    publish_event(pow_event, my_keys).await;
 
-    let client = Client::new(my_keys.clone());
+    info!(
+        "Published event with pow {} in {:?}",
+        pow_target,
+        start_time.elapsed()
+    );
+}
+
+fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result<UnsignedEvent> {
+    let nostr_sdk::UnsignedEvent {
+        kind,
+        content,
+        created_at,
+        pubkey,
+        ..
+    } = event;
+
+    let result = (1u128..u128::MAX).par_bridge().find_map_any(|nonce| {
+        let tags = vec![Tag::pow(nonce, difficulty)];
+        if EventId::new(&pubkey, &created_at, &kind, &tags, &content).check_pow(difficulty) {
+            Some(tags)
+        } else {
+            None
+        }
+    });
+
+    if let Some(tags) = result {
+        Ok(UnsignedEvent {
+            id: Some(EventId::new(&pubkey, &created_at, &kind, &tags, &content)),
+            pubkey,
+            created_at,
+            kind,
+            tags,
+            content,
+        })
+    } else {
+        Err(anyhow!("Failed to find valid PoW"))
+    }
+}
+
+async fn publish_event(pow_event: UnsignedEvent, keys: Keys) {
+    let client = Client::new(keys.clone());
     client
         .add_relay("wss://nostr.bitcoiner.social")
         .await
@@ -46,52 +93,14 @@ async fn main() {
     client.add_relay("wss://relay.nostr.band/").await.unwrap();
     client.connect().await;
 
-    let signed_event = pow_event.sign(&my_keys).unwrap();
+    let signed_event = pow_event.sign(&keys).unwrap();
     client.send_event(signed_event).await.unwrap();
-    info!(
-        "Published event with pow {} in {:?}",
-        pow_target,
-        start_time.elapsed()
-    );
 }
 
-fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result<UnsignedEvent> {
-    let tags = event.tags;
-    let kind = event.kind;
-    let content = event.content;
-    let created_at = event.created_at;
-    let pubkey = event.pubkey;
-
-    let result = (1u128..).par_bridge().find_map_any(|nonce| {
-        let mut tags = tags.clone();
-        tags.push(Tag::pow(nonce, difficulty));
-
-        let id: EventId = EventId::new(&pubkey, &created_at, &kind, &tags, &content);
-
-        if id.check_pow(difficulty) {
-            Some((id, tags))
-        } else {
-            None
-        }
-    });
-
-    if let Some((id, tags)) = result {
-        Ok(UnsignedEvent {
-            id: Some(id),
-            pubkey,
-            created_at,
-            kind,
-            tags,
-            content,
-        })
-    } else {
-        Err(anyhow!("Failed to find valid PoW"))
-    }
-}
-
+// this is a test to compare the speed of using single threaded nostr-sdk vs multi threaded rayon hashing
+// run with RUSTFLAGS="-C target-cpu=native" cargo test --release -- --nocapture
 #[test]
 fn test_performance_comparison() {
-    // run with RUSTFLAGS="-C target-cpu=native" cargo test --release -- --nocapture
     let my_keys = Keys::generate();
     let difficulty = 22;
     let iterations = 6;
@@ -112,6 +121,17 @@ fn test_performance_comparison() {
         "Average duration rayon iter pow {} (multi threaded): {:?}",
         difficulty, duration_rayon_avg
     );
+
+    // boilerplate to test new pow implementations
+    // let start = std::time::Instant::now();
+    // for _ in 0..6 {
+    //     let _ = hash_event_new(unsigned_event.clone(), difficulty).unwrap();
+    // }
+    // let duration_rayon_avg = start.elapsed() / iterations;
+    // println!(
+    //     "Average duration rayon iter pow {} (multi threaded): {:?}",
+    //     difficulty, duration_rayon_avg
+    // );
 
     // get average duration for sdk pow
     let start = std::time::Instant::now();
