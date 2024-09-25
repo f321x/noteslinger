@@ -2,7 +2,8 @@ use anyhow::*;
 use log::info;
 use nostr_sdk::prelude::*;
 use rayon::iter::{ParallelBridge, ParallelIterator};
-use std::env;
+use serde_json::json;
+use std::{env, ptr};
 use tokio::runtime::Runtime;
 
 fn main() {
@@ -32,8 +33,10 @@ fn main() {
     // Hash event
     info!("Hashing: '{}' to target: {}", args[1], args[2]);
     let start_time = std::time::Instant::now();
-    let pow_event = hash_event(unsigned_event, pow_target).unwrap();
-
+    let pow_event;
+    unsafe {
+        pow_event = hash_event(unsigned_event, pow_target).unwrap();
+    }
     // Create and run the Tokio runtime and publish the event
     let rt = Runtime::new().unwrap();
     rt.block_on(async {
@@ -46,7 +49,7 @@ fn main() {
     );
 }
 
-fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result<UnsignedEvent> {
+unsafe fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result<UnsignedEvent> {
     let nostr_sdk::UnsignedEvent {
         kind,
         content,
@@ -54,11 +57,38 @@ fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result
         pubkey,
         ..
     } = event;
+    
+    let mut byte_event = json!([0, pubkey, created_at, kind, [["nonce", "0", difficulty]], content]).to_string().into_bytes();
+    // Find the position of the tags field
+    let tags_start = byte_event.windows(9).position(|window| window == b"[\"nonce\",").unwrap();
+    let nonce_start = tags_start + 9; // Start of the nonce value
+    // println!("nonce_start: {}", nonce_start);
+    // println!("byte_event: {:?}", byte_event.to_hex_string(Case::Lower));
+    let tags_end = tags_start + byte_event[tags_start..].iter().position(|&b| b == b']').unwrap();
 
+
+    
     let result = (1u128..u128::MAX).par_bridge().find_map_any(|nonce| {
-        let tags = vec![Tag::pow(nonce, difficulty)];
-        if EventId::new(&pubkey, &created_at, &kind, &tags, &content).check_pow(difficulty) {
-            Some(tags)
+        let mut local_byte_event = byte_event.clone();
+        let nonce_str = nonce.to_string();
+        let nonce_bytes = nonce_str.as_bytes();
+        
+        // Write nonce directly into the byte array
+        ptr::copy_nonoverlapping(nonce_bytes.as_ptr(), local_byte_event.as_mut_ptr().add(nonce_start), nonce_bytes.len());
+        
+        // Fill the rest with quotation marks and closing brackets
+        for i in nonce_start + nonce_bytes.len()..tags_end {
+            *local_byte_event.get_unchecked_mut(i) = b'"';
+            *local_byte_event.get_unchecked_mut(i + 1) = b']';
+            break;
+        }
+
+        // Hash the modified byte array
+        let hash = Sha256::digest(&local_byte_event);
+
+        // Check if the hash meets the difficulty criteria
+        if check_pow_difficulty(&hash, difficulty) {
+            Some((nonce, local_byte_event))
         } else {
             None
         }
@@ -76,6 +106,45 @@ fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result
     } else {
         Err(anyhow!("Failed to find valid PoW"))
     }
+}
+
+#[inline(always)]
+unsafe fn check_pow_difficulty(hash: &[u8; 32], difficulty: u8) -> bool {
+    let full_bytes = difficulty / 8;
+    let remaining_bits = difficulty % 8;
+
+    // Check full bytes
+    if full_bytes > 0 {
+        let full_bytes_ptr = hash.as_ptr() as *const u64;
+        let full_u64s = full_bytes / 8;
+        
+        for i in 0..full_u64s {
+            if *full_bytes_ptr.add(i) != 0 {
+                return false;
+            }
+        }
+
+        let remaining_full_bytes = full_bytes % 8;
+        if remaining_full_bytes > 0 {
+            let remaining_ptr = hash.as_ptr().add(full_u64s * 8);
+            for i in 0..remaining_full_bytes {
+                if *remaining_ptr.add(i) != 0 {
+                    return false;
+                }
+            }
+        }
+    }
+
+    // Check remaining bits
+    if remaining_bits > 0 {
+        let last_byte = *hash.as_ptr().add(full_bytes as usize);
+        let mask = 0xFFu8 << (8 - remaining_bits);
+        if last_byte & mask != 0 {
+            return false;
+        }
+    }
+
+    true
 }
 
 async fn publish_event(pow_event: UnsignedEvent, keys: Keys) {
