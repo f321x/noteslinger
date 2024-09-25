@@ -58,7 +58,7 @@ fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result
 
     let start = std::time::Instant::now();
     let result = (1u128..u128::MAX).par_bridge().find_map_any(|nonce| {
-        let hash: Sha256Hash = Sha256Hash::hash(json!([0, pubkey, created_at, kind, [["nonce", nonce, difficulty]], content]).to_string().as_bytes());
+        let hash: Sha256Hash = Sha256Hash::hash(json!([0, pubkey, created_at, kind, [["nonce", nonce.to_string(), difficulty.to_string()]], content]).to_string().as_bytes());
         if nip13::get_leading_zero_bits(hash) >= difficulty {
             Some(nonce)
         } else {
