@@ -32,4 +32,4 @@ echo "alias wired='~/path/to/wired-pow-poster/target/release/noteslinger'" >> ~/
 ```
 echo "alias wired='~/path/to/wired-pow-poster/target/release/noteslinger'" >> ~/.zshrc && source ~/.zshrc
 ```
-The application can then be started just by typing "wired message pow" in the shell.
+The application can then be started just by typing ```wired "Hello Nostr!" pow[int]``` in the shell.
