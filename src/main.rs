@@ -42,7 +42,10 @@ fn main() {
     rt.block_on(async {
         publish_event(pow_event, my_keys).await;
     });
-    info!("Hashed event with pow {} in {}", pow_target, pow_duration);
+    info!(
+        "Hashed event with pow {} in {} seconds",
+        pow_target, pow_duration
+    );
 }
 
 fn hash_event(
