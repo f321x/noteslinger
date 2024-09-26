@@ -1,6 +1,9 @@
 use anyhow::*;
 use log::info;
-use nostr_sdk::{bitcoin::hashes::{Hash, sha256::Hash as Sha256Hash}, prelude::*};
+use nostr_sdk::{
+    bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash},
+    prelude::*,
+};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use serde_json::json;
 use std::env;
@@ -41,14 +44,17 @@ fn main() {
         publish_event(pow_event, my_keys).await;
     });
     info!(
-        "Published event with pow {} in {:?} generating {} at kH/s",
+        "Published event with pow {} in {:?} generating {} kH/s",
         pow_target,
         start_time.elapsed(),
-        kilohashes_per_second 
+        kilohashes_per_second
     );
 }
 
-fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result<(UnsignedEvent, u128)> {
+fn hash_event(
+    event: nostr_sdk::UnsignedEvent,
+    difficulty: u8,
+) -> anyhow::Result<(UnsignedEvent, u128)> {
     let nostr_sdk::UnsignedEvent {
         kind,
         content,
@@ -59,7 +65,18 @@ fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result
 
     let start = std::time::Instant::now();
     let result = (1u128..u128::MAX).par_bridge().find_map_any(|nonce| {
-        let hash: Sha256Hash = Sha256Hash::hash(json!([0, pubkey, created_at, kind, [["nonce", nonce.to_string(), difficulty.to_string()]], content]).to_string().as_bytes());
+        let hash: Sha256Hash = Sha256Hash::hash(
+            json!([
+                0,
+                pubkey,
+                created_at,
+                kind,
+                [["nonce", nonce.to_string(), difficulty.to_string()]],
+                content
+            ])
+            .to_string()
+            .as_bytes(),
+        );
         if nip13::get_leading_zero_bits(hash) >= difficulty {
             Some(nonce)
         } else {
@@ -67,18 +84,21 @@ fn hash_event(event: nostr_sdk::UnsignedEvent, difficulty: u8) -> anyhow::Result
         }
     });
     let duration = start.elapsed();
-    
+
     if let Some(nonce) = result {
         let tags = vec![Tag::pow(nonce, difficulty)];
-        let kilohashes_per_second = ((nonce/1000) as f64 / duration.as_secs_f64()) as u128 ;
-        Ok((UnsignedEvent {
-            id: Some(EventId::new(&pubkey, &created_at, &kind, &tags, &content)),
-            pubkey,
-            created_at,
-            kind,
-            tags,
-            content,
-        }, kilohashes_per_second))
+        let kilohashes_per_second = ((nonce / 1000) as f64 / duration.as_secs_f64()) as u128;
+        Ok((
+            UnsignedEvent {
+                id: Some(EventId::new(&pubkey, &created_at, &kind, &tags, &content)),
+                pubkey,
+                created_at,
+                kind,
+                tags,
+                content,
+            },
+            kilohashes_per_second,
+        ))
     } else {
         Err(anyhow!("Failed to find valid PoW"))
     }
