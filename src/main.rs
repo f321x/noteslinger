@@ -4,7 +4,7 @@ use nostr_sdk::{
     bitcoin::hashes::{sha256::Hash as Sha256Hash, Hash},
     prelude::*,
 };
-use rayon::iter::{ParallelBridge, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use serde_json::json;
 use std::env;
 use tokio::runtime::Runtime;
@@ -64,7 +64,7 @@ fn hash_event(
     } = event;
 
     let start = std::time::Instant::now();
-    let result = (1u128..u128::MAX).par_bridge().find_map_any(|nonce| {
+    let result = (1u128..u128::MAX).into_par_iter().find_map_any(|nonce| {
         let hash: Sha256Hash = Sha256Hash::hash(
             json!([
                 0,
