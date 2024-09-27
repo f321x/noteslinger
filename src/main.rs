@@ -1,3 +1,15 @@
+/* ************************************************************************** */
+/*                                                                            */
+/*                                                        :::      ::::::::   */
+/*   main.rs                                            :+:      :+:    :+:   */
+/*                                                    +:+ +:+         +:+     */
+/*   By: fbock <fbock@student.42heilbronn.de>       +#+  +:+       +#+        */
+/*                                                +#+#+#+#+#+   +#+           */
+/*   Created: 2024/09/27 12:22:54 by fbock             #+#    #+#             */
+/*   Updated: 2024/09/27 12:57:22 by fbock            ###   ########.fr       */
+/*                                                                            */
+/* ************************************************************************** */
+
 use anyhow::*;
 use log::info;
 use nostr_sdk::{
@@ -59,6 +71,7 @@ fn hash_event(
         pubkey,
         ..
     } = event;
+    let difficulty_string = difficulty.to_string();
 
     let start = std::time::Instant::now();
     let result = (1u128..u128::MAX).into_par_iter().find_map_any(|nonce| {
@@ -68,7 +81,7 @@ fn hash_event(
                 pubkey,
                 created_at,
                 kind,
-                [["nonce", nonce.to_string(), difficulty.to_string()]],
+                [["nonce", nonce.to_string(), difficulty_string]],
                 content
             ])
             .to_string()
